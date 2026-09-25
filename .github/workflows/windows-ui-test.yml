@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   test-windows-app:
-    name: Launch and inspect Bamboo Project
+    name: Install and test Bamboo Project
     runs-on: windows-latest
 
     steps:
@@ -33,28 +33,99 @@ jobs:
           Get-ChildItem -Path build -Recurse |
             Select-Object FullName, Length
 
-      - name: Find application executable
+      - name: Find NSIS installer
         shell: pwsh
         run: |
-          $exe = Get-ChildItem `
+          $installer = Get-ChildItem `
             -Path "build" `
-            -Filter "*.exe" `
+            -Filter "*-setup.exe" `
             -Recurse |
-            Where-Object {
-              $_.Name -notlike "*setup*" -and
-              $_.Name -notlike "*uninstall*"
-            } |
             Select-Object -First 1
 
-          if (-not $exe) {
-            Write-Error "Could not find Bamboo Project executable."
+          if (-not $installer) {
+            Write-Error "Could not find the NSIS installer."
             exit 1
           }
 
-          Write-Host "Application executable:"
-          Write-Host $exe.FullName
+          Write-Host "Installer found:"
+          Write-Host $installer.FullName
 
-          "APP_EXE=$($exe.FullName)" |
+          "INSTALLER=$($installer.FullName)" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Install Bamboo Project
+        shell: pwsh
+        run: |
+          Write-Host "Installing Bamboo Project..."
+          Write-Host "Installer: $env:INSTALLER"
+
+          $process = Start-Process `
+            -FilePath "$env:INSTALLER" `
+            -ArgumentList "/S" `
+            -Wait `
+            -PassThru
+
+          Write-Host "Installer exit code: $($process.ExitCode)"
+
+          if ($process.ExitCode -ne 0) {
+            Write-Error "Bamboo Project installer failed."
+            exit 1
+          }
+
+          Write-Host "Installation completed."
+
+      - name: Find installed application
+        shell: pwsh
+        run: |
+          Write-Host "Searching for installed Bamboo Project..."
+
+          $searchPaths = @(
+            "$env:LOCALAPPDATA\bamboo-project-1",
+            "$env:LOCALAPPDATA\bamboo-project",
+            "$env:ProgramFiles\bamboo-project-1",
+            "$env:ProgramFiles\bamboo-project"
+          )
+
+          $app = $null
+
+          foreach ($path in $searchPaths) {
+            if (Test-Path $path) {
+              Write-Host "Searching: $path"
+
+              $app = Get-ChildItem `
+                -Path $path `
+                -Filter "tauri-app.exe" `
+                -Recurse `
+                -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+
+              if ($app) {
+                break
+              }
+            }
+          }
+
+          if (-not $app) {
+            Write-Host "Application was not found in the expected locations."
+            Write-Host "Searching entire user profile..."
+
+            $app = Get-ChildItem `
+              -Path "$env:USERPROFILE\AppData\Local" `
+              -Filter "tauri-app.exe" `
+              -Recurse `
+              -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+          }
+
+          if (-not $app) {
+            Write-Error "Could not find installed tauri-app.exe."
+            exit 1
+          }
+
+          Write-Host "Installed application found:"
+          Write-Host $app.FullName
+
+          "APP_EXE=$($app.FullName)" |
             Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Launch Bamboo Project
@@ -66,7 +137,7 @@ jobs:
             -FilePath "$env:APP_EXE" `
             -PassThru
 
-          Write-Host "PID: $($process.Id)"
+          Write-Host "Application PID: $($process.Id)"
 
           "APP_PID=$($process.Id)" |
             Out-File -FilePath $env:GITHUB_ENV -Append
@@ -74,7 +145,7 @@ jobs:
       - name: Wait for application
         shell: pwsh
         run: |
-          Write-Host "Waiting for application to initialize..."
+          Write-Host "Waiting for Bamboo Project to initialize..."
           Start-Sleep -Seconds 15
 
           $process = Get-Process `
@@ -173,19 +244,15 @@ jobs:
         with:
           file-name: bamboo-project-desktop.jpg
 
-      - name: Save process information
+      - name: Save application process information
         if: always()
         shell: pwsh
         run: |
-          Write-Host "Saving process information..."
-
           Get-Process `
             -Id $env:APP_PID `
             -ErrorAction SilentlyContinue |
             Format-List * |
             Out-File bamboo-project-process.txt
-
-          Write-Host "Saving relevant processes..."
 
           Get-Process |
             Where-Object {
