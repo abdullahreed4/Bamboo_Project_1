@@ -1,0 +1,236 @@
+:root
+{
+--arch-size: calc(100dvw/25);
+--panel: min(14rem, 32dvw);
+
+--tech-green-dark: #0a2f22;
+--tech-green-dark-a: rgba(10, 47, 34, 0.6);
+--tech-green-dark-a-strong: rgba(10, 47, 34, 0.8);
+--tech-green-light: #39e991;
+--tech-green-light-a: rgba(57, 233, 145, 0.14);
+--tech-green-light-a-strong: rgba(57, 233, 145, 0.28);
+--tech-white-1: #eafaf1;
+--tech-white-2: #d3ece0;
+--tech-white-3: #f5fffa;
+}
+
+  body
+  {
+    margin:0;
+    height:100dvh;
+    box-sizing:border-box;
+    overflow:hidden;
+    background:#11161d;
+    color:#e9e2d0;
+    font-family:sans;
+    line-height:1.2;
+    display:flex;
+    justify-content:center;
+    gap:0.75rem;
+    padding:0.75rem;
+  }
+
+  /*-- CONTROL PANEL ---*/
+
+  .panel
+  {
+  box-sizing:border-box;
+  width:var(--panel);
+  flex-shrink:0;
+  container-type:inline-size;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  border-radius: var(--arch-size);
+  border: 12px solid var(--tech-green-light-a-strong);
+  padding: 0.5dvh 10px;
+  }
+
+  /* DEV NOTE: the panel now has three sections (title, brief, steps)
+     instead of the original four - .panel-controls (the check row) has
+     been deleted along with its contents. flex-basis:0 with an equal
+     grow of 1 still shares the panel's height equally among whichever
+     sections are present. Change a flex-grow value to change a
+     section's share. */
+
+  .panel-title{
+    width:100%;
+    flex-basis:0;
+    flex-grow:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:0.3rem;
+  }
+
+  .panel-actions,
+  .panel-steps{
+    width:100%;
+    flex-basis:0;
+    flex-grow:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+
+  .action-buttons{
+    width:100%;
+    display:flex;
+    flex-direction:column;
+    gap:0.5rem;
+  }
+
+  /* DEV NOTE: top:-15px lifts the step buttons 15px above where the
+     section's centring puts them, clear of the panel's bottom border. */
+
+ .step-buttons{
+    position:relative;
+    top:-15px;
+    width:100%;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:0.5rem;
+  }
+
+  /*-- CONTAINER ---*/
+
+  .container
+  {
+  box-sizing:border-box;
+  flex: 1;
+  min-width: 0;
+  width:100%;
+  max-width:900px;
+  height:100%;
+  display:grid;
+  grid-template-columns:100%;
+  grid-template-rows:100%;
+  border-radius: var(--arch-size);
+  border: 12px solid var(--tech-green-light-a-strong);
+  padding: 0.5dvh 20px;
+  }
+
+  /* DEV NOTE: every step is a page filling the container. All steps sit
+     in the container's single grid cell, so they are stacked on the
+     same centre. An inactive step is scaled to nothing and faded out;
+     when it becomes active it fades and grows back from the centre. The
+     active step waits 0.5s (its transition delay) so the outgoing step
+     has gone first. visibility is switched at the ends so a hidden step
+     can't be clicked. This stage strips each step back to its divider
+     only - the content areas above and below it are added in the next
+     stage. */
+
+ .step{
+    grid-area:1 / 1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    opacity:0;
+    transform:scale(0);
+    visibility:hidden;
+    transition:opacity 0.5s ease, transform 0.5s ease, visibility 0s linear 0.5s;
+  }
+
+  .step.active{
+    opacity:1;
+    transform:scale(1);
+    visibility:visible;
+    transition:opacity 0.5s ease 0.5s, transform 0.5s ease 0.5s, visibility 0s linear 0.5s;
+  }
+
+  h1{
+    font-family:'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+    text-align:center;
+    font-weight:700;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    max-width:100%;
+    font-size:clamp(0.7rem, 8.5cqw, 1.3rem);
+    letter-spacing:0.03em;
+    color:var(--tech-white-2);
+    margin:0;
+  }
+
+  h2{
+    font-family:'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+    text-align:center;
+    font-weight:700;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    max-width:100%;
+    font-size:clamp(0.65rem, 9.5cqw, 1.15rem);
+    letter-spacing:0.03em;
+    color:var(--tech-white-2);
+    margin:0;
+  }
+
+  .brief-text{
+    white-space:pre-line;
+  }
+
+  .step-message{
+    white-space:pre-line;
+  }
+
+  .divider{
+    width:100%;
+    margin:0;
+    border:none;
+    border-top:12px solid var(--tech-green-light-a-strong);
+  }
+
+  .step-image{
+    max-width:100%;
+    max-height:55dvh;
+    object-fit:contain;
+    margin:0 0 0.5dvh 0;
+  }
+
+  .action-button,
+  .step-button{
+    width:100%;
+    font-size:min(0.9rem, 2.6dvw);
+    overflow-wrap:anywhere;
+    padding:0.6rem 0.4rem;
+    background-color:var(--tech-green-light-a);
+    border:1px solid var(--tech-green-light);
+    border-radius:6px;
+    color:var(--tech-white-2);
+    cursor:pointer;
+  }
+
+.action-button.current,
+.step-button.current{
+  border-color:var(--tech-white-3);
+  background-color:var(--tech-green-light-a-strong);
+  color:var(--tech-white-3);
+}
+
+  .action-button:disabled{
+    opacity:0.4;
+    cursor:default;
+  }
+
+  table{
+    border-collapse:collapse;
+    margin-top:0.5rem;
+  }
+
+  th,
+  td{
+    padding:0.4rem 0.8rem;
+    border:1px solid #1e96b3;
+    text-align:center;
+  }
+
+  th{
+    color:hsl(39, 100%, 54%);
+  }
+
+  .materials-table{
+    margin:auto 0;
+  }
+  
