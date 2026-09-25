@@ -265,28 +265,57 @@ jobs:
       - name: Capture application window screenshot
         shell: pwsh
         run: |
-          Write-Host "Capturing Bamboo Project window..."
+          Write-Host "Preparing to capture Bamboo Project window..."
 
           Add-Type -AssemblyName System.Drawing
+          Add-Type -AssemblyName System.Windows.Forms
+
+          Add-Type @"
+          using System;
+          using System.Runtime.InteropServices;
+
+          public static class WindowActivation
+          {
+              [DllImport("user32.dll")]
+              public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+              [DllImport("user32.dll")]
+              public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+              [DllImport("user32.dll")]
+              public static extern bool IsIconic(IntPtr hWnd);
+          }
+          "@
+
+          $handle = [IntPtr]::new(
+            [Int64]$env:WINDOW_HANDLE
+          )
+
+          Write-Host "Window handle: $handle"
+
+          # Restore the window if minimized.
+          if ([WindowActivation]::IsIconic($handle)) {
+              [WindowActivation]::ShowWindow($handle, 9) | Out-Null
+          }
+
+          # Bring Bamboo Project to the foreground.
+          [WindowActivation]::SetForegroundWindow($handle) | Out-Null
+
+          Start-Sleep -Seconds 2
+
+          $rect = New-Object System.Drawing.Rectangle
 
           Add-Type @"
           using System;
           using System.Drawing;
-          using System.Drawing.Imaging;
           using System.Runtime.InteropServices;
 
-          public class WindowCapture
+          public static class WindowGeometry
           {
               [DllImport("user32.dll")]
               public static extern bool GetWindowRect(
                   IntPtr hWnd,
                   out RECT rect);
-
-              [DllImport("user32.dll")]
-              public static extern bool PrintWindow(
-                  IntPtr hWnd,
-                  IntPtr hdcBlt,
-                  uint nFlags);
 
               [StructLayout(LayoutKind.Sequential)]
               public struct RECT
@@ -296,82 +325,88 @@ jobs:
                   public int Right;
                   public int Bottom;
               }
-
-              public static void Capture(
-                  IntPtr hWnd,
-                  string filename)
-              {
-                  RECT rect;
-
-                  if (!GetWindowRect(hWnd, out rect))
-                  {
-                      throw new Exception(
-                          "GetWindowRect failed.");
-                  }
-
-                  int width = rect.Right - rect.Left;
-                  int height = rect.Bottom - rect.Top;
-
-                  if (width <= 0 || height <= 0)
-                  {
-                      throw new Exception(
-                          "Invalid window dimensions: " +
-                          width + "x" + height);
-                  }
-
-                  using (Bitmap bitmap =
-                      new Bitmap(
-                          width,
-                          height,
-                          PixelFormat.Format32bppArgb))
-                  {
-                      using (Graphics graphics =
-                          Graphics.FromImage(bitmap))
-                      {
-                          IntPtr hdc =
-                              graphics.GetHdc();
-
-                          try
-                          {
-                              bool result =
-                                  PrintWindow(
-                                      hWnd,
-                                      hdc,
-                                      2);
-
-                              if (!result)
-                              {
-                                  throw new Exception(
-                                      "PrintWindow failed.");
-                              }
-                          }
-                          finally
-                          {
-                              graphics.ReleaseHdc(hdc);
-                          }
-                      }
-
-                      bitmap.Save(
-                          filename,
-                          ImageFormat.Png);
-                  }
-              }
           }
           "@
 
-          $handle =
-            [IntPtr]::new(
-              [Int64]$env:WINDOW_HANDLE
-            )
+          $nativeRect = New-Object WindowGeometry+RECT
 
-          [WindowCapture]::Capture(
-            $handle,
-            "bamboo-project-ui.png"
+          if (-not [WindowGeometry]::GetWindowRect(
+              $handle,
+              [ref]$nativeRect
+          )) {
+              Write-Error "GetWindowRect failed."
+              exit 1
+          }
+
+          $left   = $nativeRect.Left
+          $top    = $nativeRect.Top
+          $right  = $nativeRect.Right
+          $bottom = $nativeRect.Bottom
+
+          $width  = $right - $left
+          $height = $bottom - $top
+
+          Write-Host "Window rectangle:"
+          Write-Host "Left   = $left"
+          Write-Host "Top    = $top"
+          Write-Host "Right  = $right"
+          Write-Host "Bottom = $bottom"
+          Write-Host "Size   = ${width}x${height}"
+
+          if ($width -le 0 -or $height -le 0) {
+              Write-Error "Invalid window dimensions."
+              exit 1
+          }
+
+          $bitmap = New-Object System.Drawing.Bitmap(
+              $width,
+              $height,
+              [System.Drawing.Imaging.PixelFormat]::Format32bppArgb
           )
 
-          Write-Host "Screenshot created:"
-          Get-Item bamboo-project-ui.png |
-            Select-Object FullName, Length
+          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+
+          try {
+              Write-Host "Copying pixels from Windows desktop..."
+
+              $graphics.CopyFromScreen(
+                  $left,
+                  $top,
+                  0,
+                  0,
+                  [System.Drawing.Size]::new($width, $height),
+                  [System.Drawing.CopyPixelOperation]::SourceCopy
+              )
+
+              $output = Join-Path $PWD "bamboo-project-ui.png"
+
+              $bitmap.Save(
+                  $output,
+                  [System.Drawing.Imaging.ImageFormat]::Png
+              )
+
+              Write-Host "Screenshot created:"
+              Get-Item $output |
+                Select-Object FullName, Length
+          }
+          finally {
+              $graphics.Dispose()
+              $bitmap.Dispose()
+          }
+
+          if (-not (Test-Path "bamboo-project-ui.png")) {
+              Write-Error "Screenshot file was not created."
+              exit 1
+          }
+
+          $size = (Get-Item "bamboo-project-ui.png").Length
+
+          if ($size -lt 1000) {
+              Write-Error "Screenshot is suspiciously small: $size bytes"
+              exit 1
+          }
+
+          Write-Host "Screenshot verified: $size bytes"
 
       - name: Save application process information
         if: always()
