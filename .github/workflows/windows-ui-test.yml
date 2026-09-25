@@ -106,11 +106,11 @@ jobs:
           }
 
           if (-not $app) {
-            Write-Host "Application was not found in the expected locations."
-            Write-Host "Searching entire user profile..."
+            Write-Host "Application was not found in expected locations."
+            Write-Host "Searching entire Local AppData..."
 
             $app = Get-ChildItem `
-              -Path "$env:USERPROFILE\AppData\Local" `
+              -Path "$env:LOCALAPPDATA" `
               -Filter "tauri-app.exe" `
               -Recurse `
               -ErrorAction SilentlyContinue |
@@ -162,7 +162,7 @@ jobs:
           Write-Host "PID: $($process.Id)"
           Write-Host "Window title: $($process.MainWindowTitle)"
 
-      - name: Inspect application window
+      - name: Find application window
         shell: pwsh
         run: |
           Add-Type @"
@@ -196,8 +196,10 @@ jobs:
               public static extern bool IsWindowVisible(
                   IntPtr hWnd);
 
-              public static void Inspect(int targetPid)
+              public static IntPtr FindWindowForProcess(int targetPid)
               {
+                  IntPtr result = IntPtr.Zero;
+
                   EnumWindows(delegate(
                       IntPtr hWnd,
                       IntPtr lParam)
@@ -211,38 +213,165 @@ jobs:
                       if (processId == targetPid &&
                           IsWindowVisible(hWnd))
                       {
-                          StringBuilder title =
-                              new StringBuilder(512);
-
-                          GetWindowText(
-                              hWnd,
-                              title,
-                              title.Capacity);
-
-                          Console.WriteLine(
-                              "WINDOW FOUND | PID=" +
-                              processId +
-                              " | TITLE=" +
-                              title.ToString());
+                          result = hWnd;
+                          return false;
                       }
 
                       return true;
 
                   }, IntPtr.Zero);
+
+                  return result;
+              }
+
+              public static string GetTitle(IntPtr hWnd)
+              {
+                  StringBuilder title =
+                      new StringBuilder(512);
+
+                  GetWindowText(
+                      hWnd,
+                      title,
+                      title.Capacity);
+
+                  return title.ToString();
               }
           }
           "@
 
-          Write-Host "Inspecting Bamboo Project windows..."
-
-          [WindowInspector]::Inspect(
+          $windowHandle =
+            [WindowInspector]::FindWindowForProcess(
               [int]$env:APP_PID
+            )
+
+          if ($windowHandle -eq [IntPtr]::Zero) {
+            Write-Error "Could not find a visible Bamboo Project window."
+            exit 1
+          }
+
+          $handleValue = $windowHandle.ToInt64()
+          $title = [WindowInspector]::GetTitle($windowHandle)
+
+          Write-Host "Application window found."
+          Write-Host "Handle: $handleValue"
+          Write-Host "Title: $title"
+
+          "WINDOW_HANDLE=$handleValue" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+
+          "WINDOW_TITLE=$title" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Capture application window screenshot
+        shell: pwsh
+        run: |
+          Write-Host "Capturing Bamboo Project window..."
+
+          Add-Type -AssemblyName System.Drawing
+
+          Add-Type @"
+          using System;
+          using System.Drawing;
+          using System.Drawing.Imaging;
+          using System.Runtime.InteropServices;
+
+          public class WindowCapture
+          {
+              [DllImport("user32.dll")]
+              public static extern bool GetWindowRect(
+                  IntPtr hWnd,
+                  out RECT rect);
+
+              [DllImport("user32.dll")]
+              public static extern bool PrintWindow(
+                  IntPtr hWnd,
+                  IntPtr hdcBlt,
+                  uint nFlags);
+
+              [StructLayout(LayoutKind.Sequential)]
+              public struct RECT
+              {
+                  public int Left;
+                  public int Top;
+                  public int Right;
+                  public int Bottom;
+              }
+
+              public static void Capture(
+                  IntPtr hWnd,
+                  string filename)
+              {
+                  RECT rect;
+
+                  if (!GetWindowRect(hWnd, out rect))
+                  {
+                      throw new Exception(
+                          "GetWindowRect failed.");
+                  }
+
+                  int width = rect.Right - rect.Left;
+                  int height = rect.Bottom - rect.Top;
+
+                  if (width <= 0 || height <= 0)
+                  {
+                      throw new Exception(
+                          "Invalid window dimensions: " +
+                          width + "x" + height);
+                  }
+
+                  using (Bitmap bitmap =
+                      new Bitmap(
+                          width,
+                          height,
+                          PixelFormat.Format32bppArgb))
+                  {
+                      using (Graphics graphics =
+                          Graphics.FromImage(bitmap))
+                      {
+                          IntPtr hdc =
+                              graphics.GetHdc();
+
+                          try
+                          {
+                              bool result =
+                                  PrintWindow(
+                                      hWnd,
+                                      hdc,
+                                      2);
+
+                              if (!result)
+                              {
+                                  throw new Exception(
+                                      "PrintWindow failed.");
+                              }
+                          }
+                          finally
+                          {
+                              graphics.ReleaseHdc(hdc);
+                          }
+                      }
+
+                      bitmap.Save(
+                          filename,
+                          ImageFormat.Png);
+                  }
+              }
+          }
+          "@
+
+          $handle =
+            [IntPtr]::new(
+              [Int64]$env:WINDOW_HANDLE
+            )
+
+          [WindowCapture]::Capture(
+            $handle,
+            "bamboo-project-ui.png"
           )
 
-      - name: Capture desktop screenshot
-        uses: OrbitalOwen/desktop-screenshot-action@0.1
-        with:
-          file-name: bamboo-project-desktop.jpg
+          Write-Host "Screenshot created:"
+          Get-Item bamboo-project-ui.png |
+            Select-Object FullName, Length
 
       - name: Save application process information
         if: always()
@@ -265,14 +394,29 @@ jobs:
               Responding |
             Out-File bamboo-project-processes.txt
 
+          @"
+          Application executable:
+          $env:APP_EXE
+
+          Process ID:
+          $env:APP_PID
+
+          Window handle:
+          $env:WINDOW_HANDLE
+
+          Window title:
+          $env:WINDOW_TITLE
+          "@ | Out-File bamboo-project-window.txt
+
       - name: Upload UI evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bamboo-project-ui-evidence
           path: |
-            bamboo-project-desktop.jpg
+            bamboo-project-ui.png
             bamboo-project-process.txt
             bamboo-project-processes.txt
+            bamboo-project-window.txt
           if-no-files-found: warn
           retention-days: 7
