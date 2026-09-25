@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       build_run_id:
-        description: "GitHub Actions run ID containing the windows-build artifact"
+        description: "Build workflow run ID"
         required: true
         type: string
 
@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Download Windows build
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v4
         with:
           name: windows-build
           path: build
@@ -29,8 +29,9 @@ jobs:
       - name: Show downloaded files
         shell: pwsh
         run: |
-          Write-Host "Downloaded build files:"
-          Get-ChildItem -Path build -Recurse | Select-Object FullName, Length
+          Write-Host "Downloaded files:"
+          Get-ChildItem -Path build -Recurse |
+            Select-Object FullName, Length
 
       - name: Find application executable
         shell: pwsh
@@ -46,14 +47,15 @@ jobs:
             Select-Object -First 1
 
           if (-not $exe) {
-            Write-Error "Could not find the Bamboo Project application executable."
+            Write-Error "Could not find Bamboo Project executable."
             exit 1
           }
 
-          Write-Host "Application executable found:"
+          Write-Host "Application executable:"
           Write-Host $exe.FullName
 
-          "APP_EXE=$($exe.FullName)" >> $env:GITHUB_ENV
+          "APP_EXE=$($exe.FullName)" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Launch Bamboo Project
         shell: pwsh
@@ -64,14 +66,15 @@ jobs:
             -FilePath "$env:APP_EXE" `
             -PassThru
 
-          Write-Host "Application PID: $($process.Id)"
+          Write-Host "PID: $($process.Id)"
 
-          "APP_PID=$($process.Id)" >> $env:GITHUB_ENV
+          "APP_PID=$($process.Id)" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Wait for application
         shell: pwsh
         run: |
-          Write-Host "Waiting for Bamboo Project to initialize..."
+          Write-Host "Waiting for application to initialize..."
           Start-Sleep -Seconds 15
 
           $process = Get-Process `
@@ -84,11 +87,11 @@ jobs:
           }
 
           Write-Host "Bamboo Project is still running."
-          Write-Host "Process name: $($process.ProcessName)"
+          Write-Host "Process: $($process.ProcessName)"
           Write-Host "PID: $($process.Id)"
-          Write-Host "Main window title: $($process.MainWindowTitle)"
+          Write-Host "Window title: $($process.MainWindowTitle)"
 
-      - name: Inspect application windows
+      - name: Inspect application window
         shell: pwsh
         run: |
           Add-Type @"
@@ -98,7 +101,9 @@ jobs:
 
           public class WindowInspector
           {
-              public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+              public delegate bool EnumWindowsProc(
+                  IntPtr hWnd,
+                  IntPtr lParam);
 
               [DllImport("user32.dll")]
               public static extern bool EnumWindows(
@@ -122,15 +127,26 @@ jobs:
 
               public static void Inspect(int targetPid)
               {
-                  EnumWindows(delegate(IntPtr hWnd, IntPtr lParam)
+                  EnumWindows(delegate(
+                      IntPtr hWnd,
+                      IntPtr lParam)
                   {
                       uint processId;
-                      GetWindowThreadProcessId(hWnd, out processId);
 
-                      if (processId == targetPid && IsWindowVisible(hWnd))
+                      GetWindowThreadProcessId(
+                          hWnd,
+                          out processId);
+
+                      if (processId == targetPid &&
+                          IsWindowVisible(hWnd))
                       {
-                          StringBuilder title = new StringBuilder(512);
-                          GetWindowText(hWnd, title, title.Capacity);
+                          StringBuilder title =
+                              new StringBuilder(512);
+
+                          GetWindowText(
+                              hWnd,
+                              title,
+                              title.Capacity);
 
                           Console.WriteLine(
                               "WINDOW FOUND | PID=" +
@@ -140,20 +156,24 @@ jobs:
                       }
 
                       return true;
+
                   }, IntPtr.Zero);
               }
           }
           "@
 
-          Write-Host "Inspecting Windows windows belonging to Bamboo Project..."
-          [WindowInspector]::Inspect([int]$env:APP_PID)
+          Write-Host "Inspecting Bamboo Project windows..."
+
+          [WindowInspector]::Inspect(
+              [int]$env:APP_PID
+          )
 
       - name: Capture desktop screenshot
         uses: OrbitalOwen/desktop-screenshot-action@0.1
         with:
           file-name: bamboo-project-desktop.jpg
 
-      - name: Save application process information
+      - name: Save process information
         if: always()
         shell: pwsh
         run: |
@@ -165,18 +185,22 @@ jobs:
             Format-List * |
             Out-File bamboo-project-process.txt
 
-          Write-Host "Saving relevant running processes..."
+          Write-Host "Saving relevant processes..."
 
           Get-Process |
             Where-Object {
               $_.ProcessName -match "bamboo|tauri|msedge|webview"
             } |
-            Format-Table Name, Id, MainWindowTitle, Responding |
+            Format-Table `
+              Name,
+              Id,
+              MainWindowTitle,
+              Responding |
             Out-File bamboo-project-processes.txt
 
       - name: Upload UI evidence
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: bamboo-project-ui-evidence
           path: |
