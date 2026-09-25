@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Planner 1</title>
+
+<link rel="stylesheet" href="/src/style.css">
+
+</head>
+
+<body>
+
+<div class="panel">
+
+<div class="panel-title">
+<h1>Project Planner</h1>
+<h2>STAKES PROJECT</h2>
+</div>
+
+<div class="panel-actions">
+<div class="action-buttons">
+
+  <!-- DEV NOTE: these two buttons are placeholders at this stage. Their
+     click listeners (previously tied to the letter-planting sequence)
+     have been removed below; they are ready to be repurposed. -->
+
+     <button id="read-brief-button" class="action-button" type="button">BRIEF</button>
+<button id="view-materials-button" class="action-button" type="button">MATERIALS</button>
+</div>
+</div>
+
+<!-- DEV NOTE: .panel-controls (the CHECK button, error count and timer)
+     has been deleted in full, per the strip-back. -->
+
+<div class="panel-steps">
+<div class="step-buttons">
+<button class="step-button" type="button">STEP 1</button>
+<button class="step-button" type="button">STEP 2</button>
+<button class="step-button" type="button">STEP 3</button>
+<button class="step-button" type="button">STEP 4</button>
+</div>
+</div>
+
+</div>  <!--- CLOSE PANEL -->
+
+<div class="container" id="container"></div>  <!--- steps are built into here by the script -->
+
+<script type="module" src="/src/main.js"></script>
+
+</body>
+</html>
